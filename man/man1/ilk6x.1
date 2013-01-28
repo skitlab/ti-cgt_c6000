@@ -1,0 +1,54 @@
+.bd B 3
+.TH ilk6x 1 "Dec 07, 2012" "TI Tools" "TI Code Generation Tools"
+.SH NAME
+ilk6x - Ifile Linker
+.SH SYNOPSIS
+.B ilk6x
+[
+.I options
+] [
+.I file(s)
+]
+.SH DESCRIPTION
+Links multiple input intermediate files into one output file.  Used for program-level compilation.
+.SH OPTIONS
+The following options are accepted by this tool:
+.SS Options:
+.SS
+.TP
+--diag_error=id
+Suppress diagnostic <id>
+.TP
+--diag_remark=id
+Suppress diagnostic <id>
+.TP
+--diag_suppress=id
+Suppress diagnostic <id>
+.TP
+--diag_warning=id
+Treat diagnostic <id> as warning
+.TP
+--display_error_number
+Emit diagnostic identifier numbers
+.TP
+-h
+Print a help message that includes usage and option information.
+.TP
+--issue_remarks
+Issue remarks
+.TP
+-pdew
+Treat warnings as errors
+.SH EXIT STATUS
+The following error values are returned:
+.PD 0
+.TP 10
+.B 0
+Successful completion.
+.TP
+.B >0
+Unsuccessful completion; an error occured.
+.PD
+.SH COPYRIGHT
+.TP
+Copyright (c) 2012, Texas Instruments, Inc.

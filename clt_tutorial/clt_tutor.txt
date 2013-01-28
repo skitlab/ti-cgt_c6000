@@ -1,0 +1,396 @@
+TMS320C6000 C/C++ CODE GENERATION TOOLS
+7.2.11
+December 2012
+Cache Layout Tool Tutorial Notes
+
+
+===============================================================================
+Cache Layout Tool Tutorial
+===============================================================================
+
+1) Program Cache Layout Development Flow
+------------------------------------------
+
+ 1.1) What's New?
+
+   Starting with C6x CGT version 7.0, the compiler introduced some new features 
+   and capabilities that can be used in conjunction with the cache layout tool, 
+   clt6x.  The following is a summary: 
+   
+     New Path Profiler Behavior: 
+      
+        The behavior of pprof6x with regards to existing CSV files that
+	contain weighted call graph analysis information has been changed
+	since previous versions of the alpha release (those alpha versions
+	dated 2 January 2009 or later will include the behavioral change
+	described here).
+
+        1. pprof6x will now append weighted call graph (WCG) analysis
+	   information to existing CSV files that contain WCG analysis
+	   information.
+	    
+	   Previous versions of pprof6x would overwrite the output CSV file
+	   when generating WCG analysis information.  
+
+        2. pprof6x will now check to make sure that an existing CSV file
+	   contains analysis information that is consistent with the type
+	   of analysis information it is being asked to generate (whether
+	   it be code coverage or WCG analysis).  
+	    
+	   Attempts to mix code coverage and WCG analysis information in 
+	   the same output CSV file will be detected and pprof6x will emit
+	   a fatal error and abort.
+
+     New Path Profiler Environment Variables:
+
+        To assist with the management of output CSV analysis files, pprof6x
+	now supports two new environment variables: 
+	
+	  TI_WCGDATA - Allows user to specify single output CSV file for all
+	     WCG analysis information.  New information will be appended to
+	     the CSV file identified by this environment variable, if the
+	     file already exists.  
+
+          TI_ANALYSIS_DIR - Specifies the directory in which the output
+	     analysis file will be generated.  The same environment variable
+	     can be used for both code coverage information and weighted call
+	     graph information.  
+	     
+	     NOTE: The existing TI_COVDIR environment variable is still
+	           supported when generating code coverage analysis, but is
+		   overridden in the presence of a defined TI_ANALYSIS_DIR
+		   environment variable.
+
+     New Compiler Options:
+
+        --analyze=callgraph -- Instructs the compiler to generate WCG
+                               analysis information.
+        --analyze=codecov   -- Instructs the compiler to generate code
+                               coverage analysis information.  This option
+			       replaces the previous --codecov option.  
+       --analyze_only       -- Halt compilation after generation of
+                               analysis information is completed.
+
+     Cache Layout Tool (clt6x):
+
+       clt6x <CSV files w/ WCG info> -o forder.cmd
+
+                            -- Create a preferred function order command
+                               file from input WCG information.
+
+     New Linker Option:
+
+       --preferred_order=<function specification>
+      
+                            -- Prioritize the placement of a function 
+                               relative to others based on the order in
+                               which --preferred_order options are 
+                               encountered during the linker invocation.
+
+     New Linker Command File Operator:
+
+       unordered()          -- This operator will relax placement
+                               constraints placed on an output section
+			       whose specification includes an explicit
+			       list of which input sections are
+			       contained in the output section.  
+			       
+			       Please see section 2.5 in the README.txt
+			       file for this alpha release for a detailed
+			       description of the unordered() operator
+			       and what it can be used for.
+
+   Please see following sections for more details of how these options and
+   tools are used in the context of the development flow.
+
+ 1.2) Gather Dynamic Profile Information
+
+   The cache layout tool, clt6x, relies on the availability of dynamic 
+   profile information in the form of a weighted call graph (WCG) in 
+   order to produce a preferred function order command file that can be
+   used to guide function placement at link-time when your application
+   is re-built.
+
+   There are several ways in which this dynamic profile information can 
+   be collected.  For example, if you are running your application on 
+   hardware, you may have the capability to collect a PC discontinuity 
+   trace.  The discontinuity trace can then be post-processed to construct
+   WCG input information for the clt6x.
+
+   The method for collecting dynamic profile information that is presented
+   here relies on the path profiling capabilities in the C6000 code
+   generation tools.  Here is how it works:
+        
+   1. Build an instrumented application
+
+      We are going to build an instrumented application using the 
+      --gen_profile_info option ...
+
+      Compile:
+        > cl6x <options> --gen_profile_info <src_file(s)> 
+
+      Compile and link:
+        > cl6x <options> --gen_profile_info <src_file> -z -l<lnk.cmd>
+
+      Use of --gen_profile_info instructs the compiler to embed counters 
+      into the code along the execution paths of each function.
+
+   2. Run instrumented application to generate .pdat file
+
+      When the application runs, the counters embedded into the application 
+      by --gen_profile_info keep track of how many times a particular 
+      execution path through a function is traversed.  The data collected 
+      in these counters is written out to a profile data file named 
+      pprofout.pdat.
+
+      The profile data file is automatically generated.  For example,
+      if you are using the C64+ simulator under CCS, you can load and
+      run your instrumented program, and you will see that a new 
+      pprofout.pdat file is created in your working directoy (where 
+      the instrumented application is loaded from).
+
+   3. Decode profile data file
+
+      Once you have a profile data file, the file is decoded by the 
+      profile data decoder tool, pdd6x, as follows:
+
+        > pdd6x -e=<instrumented app out file> -o=pprofout.prf pprofout.pdat
+
+      pdd6x produces a .prf file is then fed into the re-compile of the 
+      application that uses the profile information to generate WCG input 
+      data.
+
+   4. Use decoded profile information to generate WCG input
+
+      The compiler now supports a new option, --analyze, which is used to 
+      tell the compiler to generate WCG or code coverage analysis information.  
+      Its syntax is as follows:
+
+        --analyze=callgraph -- Instructs the compiler to generate WCG
+                               information.
+        --analyze=codecov   -- Instructs the compiler to generate code
+                               coverage information.  This option replaces
+                               the previous --codecov option.  
+
+      The compiler also supports a new --analyze_only option which
+      instructs the compiler to halt compilation after the generation
+      of analysis information has been completed.  This option replaces
+      the previous --onlycodecov option.
+        
+      To make use of the dynamic profile information that you gathered,
+      re-compile the source code for your application using the 
+      --analyze=callgraph option in combination with the 
+      --use_profile_info option:
+
+        > cl6x <options> -mo --analyze=callgraph \
+               --use_profile_info=pprofout.prf <src_file(s)>
+
+      Use of -mo instructs the compiler to generate code for each
+      function into its own subsection.  This option provides the
+      linker with the means to directly control the placement of the
+      code for a given function.
+
+      The compiler generates a CSV file containing WCG information for
+      each source file that is specified on the command line.  If such a
+      CSV file already exists, then new call graph analysis information
+      will be appended to the existing CSV file.  These CSV files are
+      then input to the cache layout tool to produce a preferred
+      function order command file for your application.
+
+      For more details on the content of the CSV files (containing WCG
+      information) generated by the compiler, please see section 2.3 below.
+
+ 1.3) Generate Preferred Function Order from Dynamic Profile Information
+
+      At this point, the compiler has generated a CSV file for each
+      C/C++ source file specified on the command line of the re-compile
+      of the application.  Each CSV file contains weighted call graph
+      information about all of the call sites in each function defined
+      in the C/C++ source file.
+
+      The new cache layout tool, clt6x, collects all of the WCG 
+      information in these CSV files into a single, merged WCG.  The
+      WCG is processed to produce a preferred function order command 
+      file that is fed into the linker to guide the placement of the 
+      functions defined in your application source files.  This is how 
+      to use clt6x:
+
+        > clt6x *.csv -o forder.cmd
+
+      The output of clt6x is a text file containing a sequence of 
+      --preferred_order=<function specification> options.  By default,
+      the name of the output file is "forder.cmd", but you can specify
+      your own file name with the -o option.  The order in which 
+      functions appear in this file is their preferred function order
+      as determined by the clt6x.
+
+      In general, the proximity of one function to another in the 
+      preferred function order list is a reflection of how often the
+      two functions call each other.  If two functions are very close
+      to each other in the list, then the linker interprets this
+      as a suggestion that the two functions should be placed very 
+      near to one another.  Functions that are placed close together 
+      are less likely to create a cache conflict miss at runtime when
+      both functions are active at the same time.  The overall effect
+      should be an improvement in program cache efficiency and 
+      performance.
+
+ 1.4) Utilize Preferred Function Order in Re-Build of Application
+
+      Finally, the preferred function order command file that is
+      produced by the clt6x is fed into the linker during the re-build
+      of the application, as follows:
+
+        > clt6x <options> -z *.obj forder.cmd -l<lnk.cmd>
+
+      The preferred function order command file, forder.cmd, contains
+      a list of --preferred_order=<function specification> options.
+      The linker prioritizes the placement of functions relative
+      to each other in the order that the --preferred_order options
+      are encountered during the linker invocation.
+
+      Each --preferred_order option contains a function specification.
+      A function specification can describe simply the name of the 
+      function for a global function, or it may provide the path name
+      and source file name where the function is defined.  A function 
+      specification that contains path and file name information is 
+      used to distinguish one static function from another that has the 
+      same function name.
+
+      As mentioned earlier, the --preferred_order options are 
+      interpreted by the linker as suggestions to guide the placement
+      of functions relative to each other.  They are not explicit
+      placement instructions.  If an object file or input section
+      is explicitly mentioned in a linker command file SECTIONS
+      directive, then the placement instruction specified in the
+      linker command file takes precedence over any suggestion from 
+      a --preferred_order option that is associated with a function 
+      that is defined in that object file or input section.
+
+      This precedence can be relaxed by applying the unordered()
+      operator to an output specification as described in section
+      2.5 of the README.txt file in this alpha release.
+
+2) Cache Layout Tool Tutorial
+-----------------------------
+
+As a means of familiarizing you with the cache layout tool development 
+flow, we'd like to take you on a guided tour through the development of
+a simple application.  Included in the alpha release distribution, you
+will find a sub-directory, clt_tutorial.  This directory contains the
+following files:
+
+	clt_tutor.txt
+        main.c
+        lots.c
+        rare.c
+
+To begin the tutorial, change your location to the clt_tutorial sub-
+directory or copy the source files to your own working directory.  
+Then consider the following ...
+
+  2.1) Introduction to the Source Files
+
+    main.c:
+
+    - defines main()
+    - main() calls rare() once
+    - main() calls main.c:local() 4 times
+
+    - defines static local()
+    - main.c:local() calls lots() 80 times
+
+    lots.c:
+
+    - defines lots(); globally visible
+    - lots() calls lots.c:local() 100+ times
+
+    - defines lots.c:local()
+
+    rare.c:
+
+    - defines rare(); globally visible
+
+  2.2) Build an Instrumented Application
+
+    > rm -f *.pdat
+    > cl6x --abi=elfabi -mv64+ --gen_profile_info main.c lots.c rare.c \
+                -z -llnk.cmd -o app.out -m app.map
+
+  2.3) Gather Dynamic Profile Information
+
+    > Load and run app.out with CCS C64+ Simulator
+
+    You should have a pprofout.pdat file in your working directory after
+    completing this step.
+
+  2.4) Decode Profile Data File
+
+    > rm -f *.prf
+    > pdd6x pprofout.pdat -eapp.out -o=pprofout.prf
+
+    You should have a pprofout.prf file in your working directory after
+    completing this step.
+
+  2.5) Use Profile Information in Re-Compile of Application
+
+    > cl6x --abi=elfabi -mv64+ --use_profile_info=pprofout.prf \
+           --analyze=callgraph -mo main.c lots.c rare.c
+
+    You should have 3 CSV files in your working directory after completing
+    this step: main.csv, lots.csv, rare.csv.  Their contents should be 
+    as follows:
+
+    main.csv:
+
+    "caller","callee","weight"
+    main,rare,1
+    main,main.c:local,4
+    main,printf,1
+    main,fflush,1
+    main.c:local,printf,4
+    main.c:local,lots,80
+
+    lots.csv:
+
+    "caller","callee","weight"
+    lots,lots.c:local,80
+    lots,lots.c:local,28
+    lots.c:local,printf,108
+
+    rare.csv:
+
+    "caller","callee","weight"
+
+  2.6) Generate Preferred Function Order Command File
+
+    > rm app_pfo.cmd
+    > clt6x main.csv lots.csv rare.csv -o app_pfo.cmd
+
+    You should have an app_pfo.cmd in your working directory containing:
+
+    --preferred_order="printf"
+    --preferred_order="lots.c:local"
+    --preferred_order="lots"
+    --preferred_order="main.c:local"
+    --preferred_order="main"
+    --preferred_order="rare"
+    --preferred_order="fflush"
+
+    This is the preferred function order list.  Note that the two 
+    versions of local() are distinguished by their source file names:
+    
+      "main.c:local"
+      "lots.c:local"
+
+  2.7) Re-Link Application Incorporating Preferred Function Order
+
+    > cl6x --abi=elfabi -mv64+ -z main.obj lots.obj rare.obj app_pfo.cmd \
+           -llnk.cmd -o app_opt.out -o app_opt.map
+
+    You should have an app_opt.map file in your working directory.  If
+    you open it and look at the contents of the .text output section, you
+    should see that the placement of the functions specified in the 
+    app_pfo.cmd file shoudl match their actual order in that file.
+
+
